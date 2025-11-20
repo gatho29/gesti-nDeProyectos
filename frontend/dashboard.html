@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Sistema de Gestión de Proyectos</title>
+    <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <h2>📊 Gestión de Proyectos</h2>
+            </div>
+            <div class="nav-menu">
+                <a href="/dashboard.html" class="nav-link active">Dashboard</a>
+                <a href="/proyectos.html" class="nav-link">Proyectos</a>
+                <a href="/kanban.html" class="nav-link">Kanban</a>
+                <a href="/reportes.html" class="nav-link">Reportes</a>
+                <span id="userInfo" class="nav-user"></span>
+                <button id="logoutBtn" class="btn btn-secondary btn-sm">Cerrar Sesión</button>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="dashboard-header">
+            <h1>Dashboard</h1>
+            <p id="welcomeMessage">Bienvenido</p>
+        </div>
+        
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon">📁</div>
+                <div class="stat-content">
+                    <h3 id="totalProyectos">0</h3>
+                    <p>Proyectos</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">✅</div>
+                <div class="stat-content">
+                    <h3 id="totalTareas">0</h3>
+                    <p>Tareas</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">✔️</div>
+                <div class="stat-content">
+                    <h3 id="tareasCompletadas">0</h3>
+                    <p>Completadas</p>
+                </div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon">⚠️</div>
+                <div class="stat-content">
+                    <h3 id="tareasRetrasadas">0</h3>
+                    <p>Retrasadas</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="dashboard-content">
+            <div class="dashboard-section">
+                <h2>Proyectos Recientes</h2>
+                <div id="proyectosRecientes" class="proyectos-list">
+                    <p class="loading">Cargando...</p>
+                </div>
+            </div>
+            
+            <div class="dashboard-section">
+                <h2>Mis Tareas Pendientes</h2>
+                <div id="tareasPendientes" class="tareas-list">
+                    <p class="loading">Cargando...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="/js/auth.js"></script>
+    <script src="/js/app.js"></script>
+    <script>
+        // Verificar autenticación y cargar dashboard
+        checkAuth().then(async () => {
+            const user = await getCurrentUser();
+            document.getElementById('welcomeMessage').textContent = `Bienvenido, ${user.nombre}`;
+            document.getElementById('userInfo').textContent = `${user.nombre} (${user.rol})`;
+            
+            // Cargar estadísticas
+            loadDashboardStats();
+            loadProyectosRecientes();
+            loadTareasPendientes();
+        });
+        
+        async function loadDashboardStats() {
+            try {
+                const proyectos = await fetch('/api/proyectos', {
+                    credentials: 'include'
+                }).then(r => r.json());
+                
+                const tareas = await fetch('/api/tareas', {
+                    credentials: 'include'
+                }).then(r => r.json());
+                
+                const completadas = tareas.filter(t => t.estado === 'Finalizado').length;
+                const retrasadas = tareas.filter(t => {
+                    if (t.estado === 'Finalizado') return false;
+                    if (!t.fecha_limite) return false;
+                    return new Date(t.fecha_limite) < new Date();
+                }).length;
+                
+                document.getElementById('totalProyectos').textContent = proyectos.length;
+                document.getElementById('totalTareas').textContent = tareas.length;
+                document.getElementById('tareasCompletadas').textContent = completadas;
+                document.getElementById('tareasRetrasadas').textContent = retrasadas;
+            } catch (error) {
+                console.error('Error cargando estadísticas:', error);
+            }
+        }
+        
+        async function loadProyectosRecientes() {
+            try {
+                const proyectos = await fetch('/api/proyectos', {
+                    credentials: 'include'
+                }).then(r => r.json());
+                
+                const container = document.getElementById('proyectosRecientes');
+                const proyectosRecientes = proyectos.slice(0, 5);
+                
+                if (proyectosRecientes.length === 0) {
+                    container.innerHTML = '<p class="empty">No hay proyectos disponibles</p>';
+                    return;
+                }
+                
+                container.innerHTML = proyectosRecientes.map(proyecto => `
+                    <div class="proyecto-card">
+                        <h3>${proyecto.nombre}</h3>
+                        <p>${proyecto.descripcion || 'Sin descripción'}</p>
+                        <div class="proyecto-meta">
+                            <span>Responsable: ${proyecto.responsable_nombre}</span>
+                            <span>Estado: ${proyecto.estado}</span>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Error cargando proyectos:', error);
+                document.getElementById('proyectosRecientes').innerHTML = '<p class="error">Error al cargar proyectos</p>';
+            }
+        }
+        
+        async function loadTareasPendientes() {
+            try {
+                const tareas = await fetch('/api/tareas?estado=Pendiente', {
+                    credentials: 'include'
+                }).then(r => r.json());
+                
+                const container = document.getElementById('tareasPendientes');
+                const misTareas = tareas.slice(0, 5);
+                
+                if (misTareas.length === 0) {
+                    container.innerHTML = '<p class="empty">No hay tareas pendientes</p>';
+                    return;
+                }
+                
+                container.innerHTML = misTareas.map(tarea => `
+                    <div class="tarea-card">
+                        <h3>${tarea.titulo}</h3>
+                        <p>${tarea.descripcion || 'Sin descripción'}</p>
+                        <div class="tarea-meta">
+                            <span class="prioridad prioridad-${tarea.prioridad.toLowerCase()}">${tarea.prioridad}</span>
+                            ${tarea.fecha_limite ? `<span>Vence: ${new Date(tarea.fecha_limite).toLocaleDateString('es-ES')}</span>` : ''}
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Error cargando tareas:', error);
+                document.getElementById('tareasPendientes').innerHTML = '<p class="error">Error al cargar tareas</p>';
+            }
+        }
+        
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            await logout();
+            window.location.href = '/login.html';
+        });
+    </script>
+</body>
+</html>
+

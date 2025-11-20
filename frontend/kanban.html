@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tablero Kanban - Sistema de Gestión de Proyectos</title>
+    <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <h2>📊 Gestión de Proyectos</h2>
+            </div>
+            <div class="nav-menu">
+                <a href="/dashboard.html" class="nav-link">Dashboard</a>
+                <a href="/proyectos.html" class="nav-link">Proyectos</a>
+                <a href="/kanban.html" class="nav-link active">Kanban</a>
+                <a href="/reportes.html" class="nav-link">Reportes</a>
+                <span id="userInfo" class="nav-user"></span>
+                <button id="logoutBtn" class="btn btn-secondary btn-sm">Cerrar Sesión</button>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="page-header">
+            <h1>Tablero Kanban</h1>
+            <div class="kanban-controls">
+                <select id="proyectoFilter" class="form-control">
+                    <option value="">Todos los proyectos</option>
+                </select>
+                <button id="btnCrearTarea" class="btn btn-primary" style="display: none;">
+                    + Nueva Tarea
+                </button>
+            </div>
+        </div>
+        
+        <div class="kanban-board" id="kanbanBoard">
+            <div class="kanban-column" data-estado="Pendiente">
+                <div class="column-header">
+                    <h3>📋 Pendiente</h3>
+                    <span class="column-count" id="countPendiente">0</span>
+                </div>
+                <div class="column-content" id="colPendiente">
+                    <p class="loading">Cargando...</p>
+                </div>
+            </div>
+            
+            <div class="kanban-column" data-estado="En Progreso">
+                <div class="column-header">
+                    <h3>🔄 En Progreso</h3>
+                    <span class="column-count" id="countEnProgreso">0</span>
+                </div>
+                <div class="column-content" id="colEnProgreso">
+                    <p class="loading">Cargando...</p>
+                </div>
+            </div>
+            
+            <div class="kanban-column" data-estado="Finalizado">
+                <div class="column-header">
+                    <h3>✅ Finalizado</h3>
+                    <span class="column-count" id="countFinalizado">0</span>
+                </div>
+                <div class="column-content" id="colFinalizado">
+                    <p class="loading">Cargando...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal para crear/editar tarea -->
+    <div id="tareaModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTareaTitle">Nueva Tarea</h2>
+                <span class="close">&times;</span>
+            </div>
+            <form id="tareaForm">
+                <input type="hidden" id="tareaId">
+                
+                <div class="form-group">
+                    <label for="tituloTarea">Título *</label>
+                    <input type="text" id="tituloTarea" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="descripcionTarea">Descripción</label>
+                    <textarea id="descripcionTarea" rows="3"></textarea>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="proyectoTarea">Proyecto *</label>
+                        <select id="proyectoTarea" required></select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="asignadoTarea">Asignado a</label>
+                        <select id="asignadoTarea">
+                            <option value="">Sin asignar</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="prioridadTarea">Prioridad</label>
+                        <select id="prioridadTarea">
+                            <option value="Baja">Baja</option>
+                            <option value="Media" selected>Media</option>
+                            <option value="Alta">Alta</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="fechaLimiteTarea">Fecha Límite</label>
+                        <input type="date" id="fechaLimiteTarea">
+                    </div>
+                </div>
+                
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeTareaModal()">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <script src="/js/auth.js"></script>
+    <script src="/js/app.js"></script>
+    <script src="/js/kanban.js"></script>
+    <script>
+        let currentUser = null;
+        let proyectos = [];
+        let usuarios = [];
+        let tareas = [];
+        
+        checkAuth().then(async () => {
+            currentUser = await getCurrentUser();
+            document.getElementById('userInfo').textContent = `${currentUser.nombre} (${currentUser.rol})`;
+            
+            // Mostrar botón crear solo para administradores y gestores
+            if (currentUser.rol === 'Administrador' || currentUser.rol === 'Gestor') {
+                document.getElementById('btnCrearTarea').style.display = 'block';
+            }
+            
+            await loadProyectos();
+            await loadUsuarios();
+            loadTareas();
+            
+            // Cargar filtro de proyecto desde URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const proyectoId = urlParams.get('proyecto');
+            if (proyectoId) {
+                document.getElementById('proyectoFilter').value = proyectoId;
+            }
+        });
+        
+        async function loadProyectos() {
+            try {
+                proyectos = await fetch('/api/proyectos', {
+                    credentials: 'include'
+                }).then(r => r.json());
+                
+                const select = document.getElementById('proyectoFilter');
+                const selectTarea = document.getElementById('proyectoTarea');
+                
+                const options = '<option value="">Todos los proyectos</option>' +
+                    proyectos.map(p => `<option value="${p.id}">${p.nombre}</option>`).join('');
+                
+                select.innerHTML = options;
+                selectTarea.innerHTML = proyectos.map(p => 
+                    `<option value="${p.id}">${p.nombre}</option>`
+                ).join('');
+            } catch (error) {
+                console.error('Error cargando proyectos:', error);
+            }
+        }
+        
+        async function loadUsuarios() {
+            try {
+                if (currentUser.rol === 'Administrador') {
+                    usuarios = await fetch('/api/usuarios', {
+                        credentials: 'include'
+                    }).then(r => r.json());
+                } else {
+                    usuarios = [];
+                }
+                
+                const select = document.getElementById('asignadoTarea');
+                const options = '<option value="">Sin asignar</option>' +
+                    usuarios.map(u => `<option value="${u.id}">${u.nombre} (${u.rol})</option>`).join('');
+                select.innerHTML = options;
+            } catch (error) {
+                console.error('Error cargando usuarios:', error);
+            }
+        }
+        
+        async function loadTareas() {
+            try {
+                const proyectoFilter = document.getElementById('proyectoFilter').value;
+                let url = '/api/tareas';
+                if (proyectoFilter) {
+                    url += `?proyecto_id=${proyectoFilter}`;
+                }
+                
+                tareas = await fetch(url, {
+                    credentials: 'include'
+                }).then(r => r.json());
+                
+                renderTareas();
+            } catch (error) {
+                console.error('Error cargando tareas:', error);
+            }
+        }
+        
+        function renderTareas() {
+            const estados = ['Pendiente', 'En Progreso', 'Finalizado'];
+            const columns = {
+                'Pendiente': document.getElementById('colPendiente'),
+                'En Progreso': document.getElementById('colEnProgreso'),
+                'Finalizado': document.getElementById('colFinalizado')
+            };
+            
+            estados.forEach(estado => {
+                const tareasEstado = tareas.filter(t => t.estado === estado);
+                const column = columns[estado];
+                
+                document.getElementById(`count${estado.replace(' ', '')}`).textContent = tareasEstado.length;
+                
+                if (tareasEstado.length === 0) {
+                    column.innerHTML = '<p class="empty-column">No hay tareas</p>';
+                } else {
+                    column.innerHTML = tareasEstado.map(tarea => {
+                        const retrasada = tarea.fecha_limite && 
+                            new Date(tarea.fecha_limite) < new Date() && 
+                            tarea.estado !== 'Finalizado';
+                        
+                        return `
+                            <div class="tarea-kanban ${retrasada ? 'tarea-retrasada' : ''}" 
+                                 draggable="true" 
+                                 data-tarea-id="${tarea.id}">
+                                <div class="tarea-header">
+                                    <h4>${tarea.titulo}</h4>
+                                    <span class="prioridad-badge prioridad-${tarea.prioridad.toLowerCase()}">${tarea.prioridad}</span>
+                                </div>
+                                <p class="tarea-desc">${tarea.descripcion || ''}</p>
+                                <div class="tarea-meta">
+                                    <span>📁 ${tarea.proyecto_nombre || 'Sin proyecto'}</span>
+                                    ${tarea.asignado_nombre ? `<span>👤 ${tarea.asignado_nombre}</span>` : ''}
+                                    ${tarea.fecha_limite ? `<span class="${retrasada ? 'text-danger' : ''}">📅 ${new Date(tarea.fecha_limite).toLocaleDateString('es-ES')}</span>` : ''}
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                }
+            });
+            
+            // Configurar drag and drop
+            setupDragAndDrop();
+        }
+        
+        function setupDragAndDrop() {
+            const tareaElements = document.querySelectorAll('.tarea-kanban');
+            const columns = document.querySelectorAll('.kanban-column');
+            
+            tareaElements.forEach(tarea => {
+                tarea.addEventListener('dragstart', (e) => {
+                    e.dataTransfer.setData('text/plain', tarea.dataset.tareaId);
+                    tarea.classList.add('dragging');
+                });
+                
+                tarea.addEventListener('dragend', (e) => {
+                    tarea.classList.remove('dragging');
+                });
+            });
+            
+            columns.forEach(column => {
+                column.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    column.classList.add('drag-over');
+                });
+                
+                column.addEventListener('dragleave', (e) => {
+                    column.classList.remove('drag-over');
+                });
+                
+                column.addEventListener('drop', async (e) => {
+                    e.preventDefault();
+                    column.classList.remove('drag-over');
+                    
+                    const tareaId = parseInt(e.dataTransfer.getData('text/plain'));
+                    const nuevoEstado = column.dataset.estado;
+                    
+                    try {
+                        const response = await fetch(`/api/tareas/${tareaId}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            credentials: 'include',
+                            body: JSON.stringify({ estado: nuevoEstado })
+                        });
+                        
+                        if (response.ok) {
+                            loadTareas();
+                        } else {
+                            alert('Error al actualizar tarea');
+                        }
+                    } catch (error) {
+                        alert('Error de conexión');
+                    }
+                });
+            });
+        }
+        
+        document.getElementById('proyectoFilter').addEventListener('change', loadTareas);
+        
+        document.getElementById('btnCrearTarea').addEventListener('click', () => {
+            document.getElementById('modalTareaTitle').textContent = 'Nueva Tarea';
+            document.getElementById('tareaForm').reset();
+            document.getElementById('tareaId').value = '';
+            document.getElementById('tareaModal').style.display = 'block';
+        });
+        
+        document.querySelector('#tareaModal .close').addEventListener('click', closeTareaModal);
+        
+        document.getElementById('tareaForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const tareaId = document.getElementById('tareaId').value;
+            const data = {
+                titulo: document.getElementById('tituloTarea').value,
+                descripcion: document.getElementById('descripcionTarea').value,
+                proyecto_id: parseInt(document.getElementById('proyectoTarea').value),
+                prioridad: document.getElementById('prioridadTarea').value,
+                fecha_limite: document.getElementById('fechaLimiteTarea').value || null
+            };
+            
+            const asignado = document.getElementById('asignadoTarea').value;
+            if (asignado) {
+                data.asignado_a_id = parseInt(asignado);
+            }
+            
+            try {
+                const url = tareaId ? `/api/tareas/${tareaId}` : '/api/tareas';
+                const method = tareaId ? 'PUT' : 'POST';
+                
+                const response = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify(data)
+                });
+                
+                if (response.ok) {
+                    closeTareaModal();
+                    loadTareas();
+                } else {
+                    const error = await response.json();
+                    alert('Error: ' + (error.error || 'Error al guardar tarea'));
+                }
+            } catch (error) {
+                alert('Error de conexión');
+            }
+        });
+        
+        function closeTareaModal() {
+            document.getElementById('tareaModal').style.display = 'none';
+        }
+        
+        window.onclick = (e) => {
+            const modal = document.getElementById('tareaModal');
+            if (e.target === modal) {
+                closeTareaModal();
+            }
+        };
+        
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            await logout();
+            window.location.href = '/login.html';
+        });
+    </script>
+</body>
+</html>
+

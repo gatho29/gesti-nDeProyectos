@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reportes - Sistema de Gestión de Proyectos</title>
+    <link rel="stylesheet" href="/css/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <h2>📊 Gestión de Proyectos</h2>
+            </div>
+            <div class="nav-menu">
+                <a href="/dashboard.html" class="nav-link">Dashboard</a>
+                <a href="/proyectos.html" class="nav-link">Proyectos</a>
+                <a href="/kanban.html" class="nav-link">Kanban</a>
+                <a href="/reportes.html" class="nav-link active">Reportes</a>
+                <span id="userInfo" class="nav-user"></span>
+                <button id="logoutBtn" class="btn btn-secondary btn-sm">Cerrar Sesión</button>
+            </div>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <div class="page-header">
+            <h1>Reportes y Métricas</h1>
+        </div>
+        
+        <div id="reportesGenerales" style="display: none;">
+            <h2>Reportes Generales del Sistema</h2>
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <h3>Total de Proyectos</h3>
+                    <p class="metric-value" id="metricTotalProyectos">0</p>
+                </div>
+                <div class="metric-card">
+                    <h3>Total de Tareas</h3>
+                    <p class="metric-value" id="metricTotalTareas">0</p>
+                </div>
+                <div class="metric-card">
+                    <h3>Tareas Completadas</h3>
+                    <p class="metric-value" id="metricTareasCompletadas">0</p>
+                </div>
+                <div class="metric-card">
+                    <h3>Tareas Retrasadas</h3>
+                    <p class="metric-value text-danger" id="metricTareasRetrasadas">0</p>
+                </div>
+                <div class="metric-card">
+                    <h3>Porcentaje Completado</h3>
+                    <p class="metric-value" id="metricPorcentajeCompletado">0%</p>
+                </div>
+            </div>
+            
+            <div class="chart-container">
+                <canvas id="chartEstados"></canvas>
+            </div>
+        </div>
+        
+        <div id="reportesProyecto">
+            <h2>Reportes por Proyecto</h2>
+            <div class="form-group">
+                <label for="proyectoReporte">Seleccionar Proyecto</label>
+                <select id="proyectoReporte" class="form-control">
+                    <option value="">Seleccione un proyecto</option>
+                </select>
+            </div>
+            
+            <div id="reporteProyectoContent" style="display: none;">
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <h3>Total de Tareas</h3>
+                        <p class="metric-value" id="projTotalTareas">0</p>
+                    </div>
+                    <div class="metric-card">
+                        <h3>Tareas Completadas</h3>
+                        <p class="metric-value" id="projTareasCompletadas">0</p>
+                    </div>
+                    <div class="metric-card">
+                        <h3>Tareas Retrasadas</h3>
+                        <p class="metric-value text-danger" id="projTareasRetrasadas">0</p>
+                    </div>
+                    <div class="metric-card">
+                        <h3>Progreso</h3>
+                        <p class="metric-value" id="projProgreso">0%</p>
+                    </div>
+                </div>
+                
+                <div class="chart-container">
+                    <canvas id="chartProyecto"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <div id="reportesPersonal" style="display: none;">
+            <h2>Mi Reporte Personal</h2>
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <h3>Mis Tareas</h3>
+                    <p class="metric-value" id="personalTotalTareas">0</p>
+                </div>
+                <div class="metric-card">
+                    <h3>Completadas</h3>
+                    <p class="metric-value" id="personalCompletadas">0</p>
+                </div>
+                <div class="metric-card">
+                    <h3>Retrasadas</h3>
+                    <p class="metric-value text-danger" id="personalRetrasadas">0</p>
+                </div>
+                <div class="metric-card">
+                    <h3>Progreso</h3>
+                    <p class="metric-value" id="personalProgreso">0%</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="/js/auth.js"></script>
+    <script src="/js/app.js"></script>
+    <script>
+        let currentUser = null;
+        let proyectos = [];
+        
+        checkAuth().then(async () => {
+            currentUser = await getCurrentUser();
+            document.getElementById('userInfo').textContent = `${currentUser.nombre} (${currentUser.rol})`;
+            
+            await loadProyectos();
+            
+            // Cargar reportes según el rol
+            if (currentUser.rol === 'Administrador') {
+                document.getElementById('reportesGenerales').style.display = 'block';
+                loadReportesGenerales();
+            }
+            
+            if (currentUser.rol === 'Colaborador') {
+                document.getElementById('reportesPersonal').style.display = 'block';
+                loadReportePersonal();
+            }
+        });
+        
+        async function loadProyectos() {
+            try {
+                proyectos = await fetch('/api/proyectos', {
+                    credentials: 'include'
+                }).then(r => r.json());
+                
+                const select = document.getElementById('proyectoReporte');
+                select.innerHTML = '<option value="">Seleccione un proyecto</option>' +
+                    proyectos.map(p => `<option value="${p.id}">${p.nombre}</option>`).join('');
+                
+                select.addEventListener('change', (e) => {
+                    if (e.target.value) {
+                        loadReporteProyecto(parseInt(e.target.value));
+                    } else {
+                        document.getElementById('reporteProyectoContent').style.display = 'none';
+                    }
+                });
+            } catch (error) {
+                console.error('Error cargando proyectos:', error);
+            }
+        }
+        
+        async function loadReportesGenerales() {
+            try {
+                const metricas = await fetch('/api/reportes/generales', {
+                    credentials: 'include'
+                }).then(r => r.json());
+                
+                document.getElementById('metricTotalProyectos').textContent = metricas.total_proyectos;
+                document.getElementById('metricTotalTareas').textContent = metricas.total_tareas;
+                document.getElementById('metricTareasCompletadas').textContent = metricas.tareas_completadas;
+                document.getElementById('metricTareasRetrasadas').textContent = metricas.tareas_retrasadas;
+                document.getElementById('metricPorcentajeCompletado').textContent = metricas.porcentaje_completado + '%';
+                
+                // Gráfico de estados
+                const ctx = document.getElementById('chartEstados').getContext('2d');
+                new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: Object.keys(metricas.tareas_por_estado),
+                        datasets: [{
+                            data: Object.values(metricas.tareas_por_estado),
+                            backgroundColor: [
+                                '#ffc107',
+                                '#17a2b8',
+                                '#28a745'
+                            ]
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Distribución de Tareas por Estado'
+                            }
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error cargando reportes generales:', error);
+            }
+        }
+        
+        async function loadReporteProyecto(proyectoId) {
+            try {
+                const metricas = await fetch(`/api/reportes/proyecto/${proyectoId}`, {
+                    credentials: 'include'
+                }).then(r => r.json());
+                
+                document.getElementById('projTotalTareas').textContent = metricas.total_tareas;
+                document.getElementById('projTareasCompletadas').textContent = metricas.tareas_completadas;
+                document.getElementById('projTareasRetrasadas').textContent = metricas.tareas_retrasadas;
+                document.getElementById('projProgreso').textContent = metricas.porcentaje_completado + '%';
+                
+                document.getElementById('reporteProyectoContent').style.display = 'block';
+                
+                // Gráfico de estados del proyecto
+                const ctx = document.getElementById('chartProyecto').getContext('2d');
+                new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: Object.keys(metricas.tareas_por_estado),
+                        datasets: [{
+                            label: 'Tareas',
+                            data: Object.values(metricas.tareas_por_estado),
+                            backgroundColor: [
+                                '#ffc107',
+                                '#17a2b8',
+                                '#28a745'
+                            ]
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Tareas por Estado'
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    stepSize: 1
+                                }
+                            }
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error cargando reporte del proyecto:', error);
+            }
+        }
+        
+        async function loadReportePersonal() {
+            try {
+                const metricas = await fetch(`/api/reportes/usuario/${currentUser.id}`, {
+                    credentials: 'include'
+                }).then(r => r.json());
+                
+                document.getElementById('personalTotalTareas').textContent = metricas.total_tareas;
+                document.getElementById('personalCompletadas').textContent = metricas.tareas_completadas;
+                document.getElementById('personalRetrasadas').textContent = metricas.tareas_retrasadas;
+                document.getElementById('personalProgreso').textContent = metricas.porcentaje_completado + '%';
+            } catch (error) {
+                console.error('Error cargando reporte personal:', error);
+            }
+        }
+        
+        document.getElementById('logoutBtn').addEventListener('click', async () => {
+            await logout();
+            window.location.href = '/login.html';
+        });
+    </script>
+</body>
+</html>
+
